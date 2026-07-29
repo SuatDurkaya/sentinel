@@ -1,4 +1,5 @@
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 import psycopg2
 
 app = FastAPI()
@@ -36,3 +37,5 @@ def get_status():
         return results
     except Exception as e:
         return {"error": str(e)}    
+
+app.mount("/", StaticFiles(directory="static", html=True), name="static")
