@@ -1,0 +1,21 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: sentinel-secrets
+type: Opaque
+stringData:
+  POSTGRES_PASSWORD: sentinel
+  GMAIL_APP_PASSWORD: "khtt xuhn wfgv mhis"
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: sentinel-config
+data:
+  POSTGRES_USER: sentinel
+  POSTGRES_DB: sentinel
+  POSTGRES_HOST: postgres
+  REDIS_HOST: redis
+  GMAIL_ADDRESS: suat92645@gmail.com
+  ALERT_TO_EMAIL: suatdurkaya07@gmail.com

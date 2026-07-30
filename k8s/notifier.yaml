@@ -1,0 +1,23 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sentinel-notifier
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: sentinel-notifier
+  template:
+    metadata:
+      labels:
+        app: sentinel-notifier
+    spec:
+      containers:
+        - name: notifier
+          image: sentinel-notifier:local
+          imagePullPolicy: Never
+          envFrom:
+            - configMapRef:
+                name: sentinel-config
+            - secretRef:
+                name: sentinel-secrets

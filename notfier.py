@@ -10,7 +10,11 @@ GMAIL_ADDRESS = os.getenv("GMAIL_ADDRESS")
 GMAIL_APP_PASSWORD = os.getenv("GMAIL_APP_PASSWORD")
 ALERT_TO_EMAIL = os.getenv("ALERT_TO_EMAIL")    
 
-redis_client = redis.Redis(host='localhost', port=6379, decode_responses=True)
+redis_client = redis.Redis(
+    host=os.getenv("REDIS_HOST", "localhost"),
+    port=6379,
+    decode_responses=True
+)
 
 def start_listening():
     pubsub = redis_client.pubsub()

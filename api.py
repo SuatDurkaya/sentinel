@@ -1,15 +1,16 @@
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 import psycopg2
+import os
 
 app = FastAPI()
 
 DB_CONFIG = {
-    'host': 'localhost',
-    'port': 5432,
-    'database': 'sentinel',
-    'user': 'sentinel',
-    'password': 'sentinel'
+    "host": os.getenv("POSTGRES_HOST", "localhost"),
+    "port": 5432,
+    "database": os.getenv("POSTGRES_DB", "sentinel"),
+    "user": os.getenv("POSTGRES_USER", "sentinel"),
+    "password": os.getenv("POSTGRES_PASSWORD", "sentinel"),
 }
 
 @app.get("/status")

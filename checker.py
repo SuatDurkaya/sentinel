@@ -5,11 +5,11 @@ import os
 from datetime import datetime
 
 DB_CONFIG = {
-    "host": "localhost",
+    "host": os.getenv("POSTGRES_HOST", "localhost"),
     "port": 5432,
-    "database": "sentinel",
-    "user": "sentinel",
-    "password": "sentinel"
+    "database": os.getenv("POSTGRES_DB", "sentinel"),
+    "user": os.getenv("POSTGRES_USER", "sentinel"),
+    "password": os.getenv("POSTGRES_PASSWORD", "sentinel"),
 }
 
 def connect_db():

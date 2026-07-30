@@ -1,0 +1,23 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sentinel-checker
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: sentinel-checker
+  template:
+    metadata:
+      labels:
+        app: sentinel-checker
+    spec:
+      containers:
+        - name: checker
+          image: sentinel-checker:local
+          imagePullPolicy: Never
+          envFrom:
+            - configMapRef:
+                name: sentinel-config
+            - secretRef:
+                name: sentinel-secrets
