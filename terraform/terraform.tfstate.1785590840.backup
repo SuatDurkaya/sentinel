@@ -1,0 +1,77 @@
+{
+  "version": 4,
+  "terraform_version": "1.9.0",
+  "serial": 32,
+  "lineage": "e58644dd-c4c4-a37b-e824-6d26316a9497",
+  "outputs": {},
+  "resources": [
+    {
+      "mode": "managed",
+      "type": "kubernetes_secret",
+      "name": "sentinel_secrets",
+      "provider": "provider[\"registry.terraform.io/hashicorp/kubernetes\"]",
+      "instances": [
+        {
+          "schema_version": 0,
+          "attributes": {
+            "binary_data": null,
+            "binary_data_wo": null,
+            "binary_data_wo_revision": null,
+            "data": {
+              "GMAIL_APP_PASSWORD": "khtt xuhn wfgv mhis",
+              "POSTGRES_PASSWORD": "sentinel"
+            },
+            "data_wo": null,
+            "data_wo_revision": null,
+            "id": "default/sentinel-secrets",
+            "immutable": false,
+            "metadata": [
+              {
+                "annotations": {},
+                "generate_name": "",
+                "generation": 0,
+                "labels": {},
+                "name": "sentinel-secrets",
+                "namespace": "default",
+                "resource_version": "196540",
+                "uid": "a39b58b2-7fef-4493-a54e-bbfbb5e684da"
+              }
+            ],
+            "timeouts": null,
+            "type": "Opaque",
+            "wait_for_service_account_token": true
+          },
+          "sensitive_attributes": [
+            [
+              {
+                "type": "get_attr",
+                "value": "data"
+              }
+            ],
+            [
+              {
+                "type": "get_attr",
+                "value": "data"
+              },
+              {
+                "type": "index",
+                "value": {
+                  "value": "GMAIL_APP_PASSWORD",
+                  "type": "string"
+                }
+              }
+            ],
+            [
+              {
+                "type": "get_attr",
+                "value": "binary_data"
+              }
+            ]
+          ],
+          "private": "eyJlMmJmYjczMC1lY2FhLTExZTYtOGY4OC0zNDM2M2JjN2M0YzAiOnsiY3JlYXRlIjo2MDAwMDAwMDAwMH19"
+        }
+      ]
+    }
+  ],
+  "check_results": null
+}
