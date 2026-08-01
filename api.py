@@ -1,7 +1,9 @@
-from fastapi import FastAPI
+from prometheus.client import generate_latest, CONTENT_TYPE_LATEST, Counter
+from fastapi import FastAPI, Response
 from fastapi.staticfiles import StaticFiles
 import psycopg2
 import os
+
 
 app = FastAPI()
 
@@ -13,8 +15,15 @@ DB_CONFIG = {
     "password": os.getenv("POSTGRES_PASSWORD", "sentinel"),
 }
 
+check_requests_total = Counter(
+    "sentinel_status_requests_total",
+    "Total number of /status requests"
+)
+
+
 @app.get("/status")
 def get_status():
+    check_requests_total.inc()
     try:
         conn = psycopg2.connect(**DB_CONFIG)
         cursor = conn.cursor()
@@ -38,5 +47,11 @@ def get_status():
         return results
     except Exception as e:
         return {"error": str(e)}    
+
+
+@app.get("/metrics")
+def metrics():
+    return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
+
 
 app.mount("/", StaticFiles(directory="static", html=True), name="static")
