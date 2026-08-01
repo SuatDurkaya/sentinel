@@ -1,4 +1,4 @@
-from prometheus.client import generate_latest, CONTENT_TYPE_LATEST, Counter
+from prometheus_client import generate_latest, CONTENT_TYPE_LATEST, Counter
 from fastapi import FastAPI, Response
 from fastapi.staticfiles import StaticFiles
 import psycopg2
