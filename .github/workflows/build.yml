@@ -1,0 +1,21 @@
+name: Build Sentinel Images
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        service: [checker,api,notifier]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Build ${{ matrix.service }} image
+        run: docker build -f {{ matrix.service }} -t sentinel-${{ matrix.service }}:ci .
