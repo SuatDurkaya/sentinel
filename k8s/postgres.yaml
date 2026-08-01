@@ -30,6 +30,15 @@ spec:
           image: postgres:16
           ports:
             - containerPort: 5432
+
+          readinessProbe:
+            exec:
+              command:
+                - pg_isready
+                - -U
+                - sentinel
+            initialDelaySeconds: 5
+            periodSeconds: 5
           env:
             - name: POSTGRES_USER
               valueFrom:
