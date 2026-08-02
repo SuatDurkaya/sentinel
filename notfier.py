@@ -8,7 +8,6 @@ load_dotenv()
 
 GMAIL_ADDRESS = os.getenv("GMAIL_ADDRESS")
 GMAIL_APP_PASSWORD = os.getenv("GMAIL_APP_PASSWORD")
-ALERT_TO_EMAIL = os.getenv("ALERT_TO_EMAIL")    
 
 redis_client = redis.Redis(
     host=os.getenv("REDIS_HOST", "localhost"),
@@ -28,21 +27,25 @@ def start_listening():
 
 
 def send_notification(text: str):
-    # Placeholder for sending notifications (e.g., email, SMS, etc.)
+    text = f"{alert['url']} is DOWN (error: {alert.get('error', 'status ' + str(alert.get('status_code')))})"
     print(f"[NOTIFICATION] {text}")
-    send_email("Sentinel Alert", text)
+    recipient = alert.get("owner_email")
+    if recipient:
+        send_email("Sentinel Alert", text, recipient)
+    else:
+        print("No owner_email found, skipping email")
 
-def send_email(subject: str, body: str):
+def send_email(subject: str, body: str, to_email: str):
     msg = MIMEText(body)
     msg["Subject"] = subject
     msg["From"] = GMAIL_ADDRESS
-    msg["To"] = ALERT_TO_EMAIL
+    msg["To"] = to_email 
 
     try:
         with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
             server.login(GMAIL_ADDRESS, GMAIL_APP_PASSWORD)
             server.send_message(msg)
-        print(f"Email sent to {ALERT_TO_EMAIL}")
+        print(f"Email sent to {to_email}")
     except Exception as e:
         print(f"Failed to send email: {e}")
 

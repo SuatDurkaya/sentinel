@@ -2,7 +2,15 @@ import requests
 import time
 import psycopg2
 import os
+import json
+import redis
 from datetime import datetime
+
+redis_client = redis.Redis(
+    host=os.getenv("REDIS_HOST", "localhost"),
+    port=6379,
+    decode_responses=True
+)
 
 DB_CONFIG = {
     "host": os.getenv("POSTGRES_HOST", "localhost"),
@@ -35,9 +43,48 @@ def init_db():
                 checked_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS users (
+                id SERIAL PRIMARY KEY,
+                username TEXT UNIQUE NOT NULL,
+                hashed_password TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS targets (
+                id SERIAL PRIMARY KEY,
+                url TEXT NOT NULL,
+                owner_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, 
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        cursor.execute("""
+            ALTER TABLE users ADD COLUMN IF NOT EXISTS email TEXT;
+        """)
         conn.commit()
         cursor.close()
         conn.close()
+
+def publish_to_redis(result: dict):
+    try:
+        redis_client.publish("alerts", json.dumps(result))
+        print(f"[ALERT PUBLISHED] {result['url']}")
+    except Exception as e:
+        print(f"Failed to publish to redis: {e}")
+
+def get_all_targets():
+    conn = connect_db()
+    if not conn:
+        return []
+    cursor = conn.cursor()
+    cursor.execute("SELECT targets.url, users.email FROM targets JOIN users ON targets.owner_id = users.id")
+    rows = cursor.fetchall()
+    cursor.close()
+    conn.close()
+    return [{"url": row[0], "owner_email": row[1]} for row in rows]
+
+
 
 def check_url(url):
     start_time = time.time()
@@ -77,17 +124,18 @@ def save_results(results: dict):
     conn.close()
 
 
-def run_checker(urls, interval=30):
+def run_checker(interval=30):
     while True:
-        for url in urls:
-            result = check_url(url)
+        targets = get_all_targets()
+        for target in targets:
+            result = check_url(target["url"])
+            result["owner_email"] = target["owner_email"]
             save_results(result)
             print(result)
+            if result.get("status") == "down":
+                publish_to_redis(result)
         time.sleep(interval)
+
 if __name__ == "__main__":
     init_db()
-    urls = [
-        "https://www.suatdurkaya.dev",
-        "https://www.bobsotfrs.com"
-    ]
-    run_checker(urls, interval=30)
+    run_checker(interval=30)
