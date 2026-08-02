@@ -6,6 +6,7 @@ type: Opaque
 stringData:
   POSTGRES_PASSWORD: sentinel
   GMAIL_APP_PASSWORD: "khtt xuhn wfgv mhis"
+  JWT_SECRET_KEY: "dev-most-secret-key"
 
 ---
 apiVersion: v1
