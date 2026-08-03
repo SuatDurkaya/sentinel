@@ -1,22 +1,18 @@
 terraform {
-    required_providers {
-        aws = {
-            source = "hashicorp/aws"
-            version = "~> 5.0"
-        }
-        kubernetes = {
-            source = "hashicorp/kubernetes"
-            version = "~> 2.31"
-        }
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 5.0"
     }
-}
-
-provider "kubernetes" {
-    config_path = "~/.kube/config"
+    helm = {
+      source  = "hashicorp/helm"
+      version = "~> 2.15"
+    }
+  }
 }
 
 provider "aws" {
-    region = "eu-central-1"
+  region = "eu-central-1"
 }
 
 module "vpc" {
@@ -26,15 +22,29 @@ module "vpc" {
   name = "sentinel-vpc"
   cidr = "10.0.0.0/16"
 
-  azs             = ["eu-central-1a", "eu-central-1b"]
-  private_subnets = ["10.0.1.0/24", "10.0.2.0/24"]
-  public_subnets  = ["10.0.101.0/24", "10.0.102.0/24"]
+  azs                     = ["eu-central-1a", "eu-central-1b"]
+  private_subnets         = ["10.0.1.0/24", "10.0.2.0/24"]
+  public_subnets          = ["10.0.101.0/24", "10.0.102.0/24"]
+  map_public_ip_on_launch = true
 
-  enable_nat_gateway = true
+  enable_nat_gateway = false
   single_nat_gateway = true
 
   tags = {
     Project = "sentinel"
+  }
+}
+
+provider "helm" {
+  kubernetes {
+    host                   = module.eks.cluster_endpoint
+    cluster_ca_certificate = base64decode(module.eks.cluster_certificate_authority_data)
+
+    exec {
+      api_version = "client.authentication.k8s.io/v1beta1"
+      command     = "aws"
+      args        = ["eks", "get-token", "--cluster-name", module.eks.cluster_name, "--region", "eu-central-1"]
+    }
   }
 }
 
@@ -46,9 +56,11 @@ module "eks" {
   cluster_version = "1.30"
 
   vpc_id     = module.vpc.vpc_id
-  subnet_ids = module.vpc.private_subnets
+  subnet_ids = module.vpc.public_subnets
 
-  cluster_endpoint_public_access = true
+  cluster_endpoint_public_access          = true
+  enable_cluster_creator_admin_permissions = true
+  enable_irsa                             = true
 
   eks_managed_node_groups = {
     default = {
@@ -64,379 +76,49 @@ module "eks" {
   }
 }
 
-resource "kubernetes_deployment" "redis" {
-    metadata {
-        name = "redis"
-    }
+resource "helm_release" "ingress_nginx" {
+  name             = "ingress-nginx"
+  repository       = "https://kubernetes.github.io/ingress-nginx"
+  chart            = "ingress-nginx"
+  namespace        = "ingress-nginx"
+  create_namespace = true
 
-    spec {
-    replicas = 1
+  set {
+    name  = "controller.service.type"
+    value = "LoadBalancer"
+  }
+}
 
-    selector {
-      match_labels = {
-        app = "redis"
-      }
-    }
+# ----- EBS CSI Driver -----
+# PostgreSQL'in disk (PVC) talebi için gerekli.
+# Bu driver olmadan Kubernetes AWS'den EBS diski oluşturamaz.
 
-    template {
-      metadata {
-        labels = {
-          app = "redis"
-        }
-      }
+# 1) IAM Role: Driver'a "AWS'den disk oluşturma/silme yetkisi" veriyor
+#    IRSA (IAM Roles for Service Accounts) kullanıyor — pod seviyesinde yetki
+data "aws_iam_policy" "ebs_csi" {
+  arn = "arn:aws:iam::aws:policy/service-role/AmazonEBSCSIDriverPolicy"
+}
 
-      spec {
-        container {
-          name  = "redis"
-          image = "redis:7"
+module "ebs_csi_irsa" {
+  source  = "terraform-aws-modules/iam/aws//modules/iam-role-for-service-accounts-eks"
+  version = "~> 5.0"
 
-          port {
-            container_port = 6379
-          }
-        }
-      }
+  role_name             = "ebs-csi-driver-role"
+  attach_ebs_csi_policy = true
+
+  oidc_providers = {
+    main = {
+      provider_arn               = module.eks.oidc_provider_arn
+      namespace_service_accounts = ["kube-system:ebs-csi-controller-sa"]
     }
   }
 }
 
-resource "kubernetes_service" "redis" {
-  metadata {
-    name = "redis"
-  }
+# 2) EKS Addon: Driver'ın kendisini cluster'a yüklüyor
+resource "aws_eks_addon" "ebs_csi" {
+  cluster_name             = module.eks.cluster_name
+  addon_name               = "aws-ebs-csi-driver"
+  service_account_role_arn = module.ebs_csi_irsa.iam_role_arn
 
-  spec {
-    selector = {
-      app = "redis"
-    }
-
-    port {
-      port        = 6379
-      target_port = 6379
-    }
-  }
-}
-
-resource "kubernetes_secret" "sentinel_secrets" {
-  metadata {
-    name = "sentinel-secrets"
-  }
-
-  data = {
-    POSTGRES_PASSWORD  = "sentinel"
-    GMAIL_APP_PASSWORD = var.gmail_app_password
-  }
-
-  type = "Opaque"
-}
-
-resource "kubernetes_config_map" "sentinel_config" {
-  metadata {
-    name = "sentinel-config"
-  }
-
-  data = {
-    POSTGRES_USER   = "sentinel"
-    POSTGRES_DB     = "sentinel"
-    POSTGRES_HOST   = "postgres"
-    REDIS_HOST      = "redis"
-    GMAIL_ADDRESS   = var.gmail_address
-    ALERT_TO_EMAIL  = var.alert_to_email
-  }
-}
-
-resource "kubernetes_deployment" "sentinel_checker" {
-  metadata {
-    name = "sentinel-checker"
-  }
-
-  spec {
-    replicas = 1
-
-    selector {
-      match_labels = {
-        app = "sentinel-checker"
-      }
-    }
-
-    template {
-      metadata {
-        labels = {
-          app = "sentinel-checker"
-        }
-      }
-
-      spec {
-        container {
-          name              = "checker"
-          image             = "sentinel-checker:local"
-          image_pull_policy = "Never"
-
-          env_from {
-            config_map_ref {
-              name = kubernetes_config_map.sentinel_config.metadata[0].name
-            }
-          }
-
-          env_from {
-            secret_ref {
-              name = kubernetes_secret.sentinel_secrets.metadata[0].name
-            }
-          }
-        }
-      }
-    }
-  }
-}
-
-resource "kubernetes_deployment" "sentinel_api" {
-  metadata {
-    name = "sentinel-api"
-  }
-
-  spec {
-    replicas = 1
-
-    selector {
-      match_labels = {
-        app = "sentinel-api"
-      }
-    }
-
-    template {
-      metadata {
-        labels = {
-          app = "sentinel-api"
-        }
-      }
-
-      spec {
-        container {
-          name              = "api"
-          image             = "sentinel-api:local"
-          image_pull_policy = "Never"
-
-          port {
-            container_port = 8000
-          }
-
-          env_from {
-            config_map_ref {
-              name = kubernetes_config_map.sentinel_config.metadata[0].name
-            }
-          }
-
-          env_from {
-            secret_ref {
-              name = kubernetes_secret.sentinel_secrets.metadata[0].name
-            }
-          }
-        }
-      }
-    }
-  }
-}
-
-resource "kubernetes_service" "sentinel_api" {
-  metadata {
-    name = "sentinel-api"
-  }
-
-  spec {
-    selector = {
-      app = "sentinel-api"
-    }
-
-    port {
-      port        = 80
-      target_port = 8000
-    }
-  }
-}
-
-resource "kubernetes_ingress_v1" "sentinel" {
-  metadata {
-    name = "sentinel-ingress"
-  }
-
-  spec {
-    ingress_class_name = "nginx"
-
-    rule {
-      host = "sentinel.local"
-
-      http {
-        path {
-          path      = "/"
-          path_type = "Prefix"
-
-          backend {
-            service {
-              name = kubernetes_service.sentinel_api.metadata[0].name
-              port {
-                number = 80
-              }
-            }
-          }
-        }
-      }
-    }
-  }
-}
-
-resource "kubernetes_deployment" "sentinel_notifier" {
-  metadata {
-    name = "sentinel-notifier"
-  }
-
-  spec {
-    replicas = 1
-
-    selector {
-      match_labels = {
-        app = "sentinel-notifier"
-      }
-    }
-
-    template {
-      metadata {
-        labels = {
-          app = "sentinel-notifier"
-        }
-      }
-
-      spec {
-        container {
-          name              = "notifier"
-          image             = "sentinel-notifier:local"
-          image_pull_policy = "Never"
-
-          env_from {
-            config_map_ref {
-              name = kubernetes_config_map.sentinel_config.metadata[0].name
-            }
-          }
-
-          env_from {
-            secret_ref {
-              name = kubernetes_secret.sentinel_secrets.metadata[0].name
-            }
-          }
-        }
-      }
-    }
-  }
-}
-
-resource "kubernetes_service" "postgres" {
-  metadata {
-    name = "postgres"
-  }
-
-  spec {
-    cluster_ip = "None"
-
-    selector = {
-      app = "postgres"
-    }
-
-    port {
-      port        = 5432
-      target_port = 5432
-    }
-  }
-}
-
-resource "kubernetes_stateful_set" "postgres" {
-  metadata {
-    name = "postgres"
-  }
-
-  spec {
-    service_name = kubernetes_service.postgres.metadata[0].name
-    replicas     = 1
-
-    selector {
-      match_labels = {
-        app = "postgres"
-      }
-    }
-
-    template {
-      metadata {
-        labels = {
-          app = "postgres"
-        }
-      }
-
-      spec {
-        container {
-          name  = "postgres"
-          image = "postgres:16"
-
-          port {
-            container_port = 5432
-          }
-
-          readiness_probe {
-            exec {
-                command = ["pg_isready", "-U", "sentinel"]
-            }
-            initial_delay_seconds = 5
-            period_seconds         = 5
-        }
-
-          env {
-            name = "POSTGRES_USER"
-            value_from {
-              config_map_key_ref {
-                name = kubernetes_config_map.sentinel_config.metadata[0].name
-                key  = "POSTGRES_USER"
-              }
-            }
-          }
-
-          env {
-            name = "POSTGRES_DB"
-            value_from {
-              config_map_key_ref {
-                name = kubernetes_config_map.sentinel_config.metadata[0].name
-                key  = "POSTGRES_DB"
-              }
-            }
-          }
-
-          env {
-            name = "POSTGRES_PASSWORD"
-            value_from {
-              secret_key_ref {
-                name = kubernetes_secret.sentinel_secrets.metadata[0].name
-                key  = "POSTGRES_PASSWORD"
-              }
-            }
-          }
-
-          volume_mount {
-            name       = "postgres-data"
-            mount_path = "/var/lib/postgresql/data"
-          }
-        }
-      }
-    }
-
-    volume_claim_template {
-      metadata {
-        name = "postgres-data"
-      }
-
-      spec {
-        access_modes = ["ReadWriteOnce"]
-
-        resources {
-          requests = {
-            storage = "1Gi"
-          }
-        }
-      }
-    }
-  }
+  depends_on = [module.eks]
 }
