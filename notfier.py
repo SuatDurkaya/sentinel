@@ -1,5 +1,6 @@
 import redis
 import smtplib
+import json
 from email.mime.text import MIMEText
 from dotenv import load_dotenv
 import os
@@ -22,11 +23,11 @@ def start_listening():
 
     for message in pubsub.listen():
         if message['type'] == 'message':
-            alert_text = message['data']
-            send_notification(alert_text)
+            alert_data = json.loads(message['data'])
+            send_notification(alert_data)
 
 
-def send_notification(text: str):
+def send_notification(alert: dict):
     text = f"{alert['url']} is DOWN (error: {alert.get('error', 'status ' + str(alert.get('status_code')))})"
     print(f"[NOTIFICATION] {text}")
     recipient = alert.get("owner_email")
@@ -39,7 +40,7 @@ def send_email(subject: str, body: str, to_email: str):
     msg = MIMEText(body)
     msg["Subject"] = subject
     msg["From"] = GMAIL_ADDRESS
-    msg["To"] = to_email 
+    msg["To"] = to_email
 
     try:
         with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
